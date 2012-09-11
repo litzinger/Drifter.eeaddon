@@ -85,7 +85,7 @@ class Drifter_ext
         $extensions = array(
             // Admin > Field Groups
             array('hook'=>'sessions_end', 'method'=>'sessions_end'),
-            array('hook'=>'publish_form_channel_preferences', 'method'=>'publish_form_channel_preferences')
+            array('hook'=>'api_channel_entries_custom_field_query', 'method'=>'api_channel_entries_custom_field_query')
         );
         
         foreach($extensions as $extension)
@@ -110,6 +110,20 @@ class Drifter_ext
         }
     }
 
+    function api_channel_entries_custom_field_query($result_array)
+    {
+        $this->channel_id = $this->EE->input->get('channel_id');
+
+        $sql = "SELECT cf.field_id, cf.field_name, cf.field_label, cf.field_type, cf.field_required 
+                FROM exp_channels c
+                LEFT JOIN exp_channel_fields cf ON (c.field_group = cf.group_id OR (cf.field_is_drifter = 'y' AND cf.drifter_channels LIKE '%{". $this->channel_id . "}%'))
+                WHERE c.channel_id = $this->channel_id";
+
+        $query = $this->EE->db->query($sql);
+
+        return $query->result_array();
+    }
+
 
 
     /**
@@ -123,42 +137,6 @@ class Drifter_ext
         if ($current == '' OR $current == $this->version)
         {
             return FALSE;
-        }
-
-        if($current < '1.1.3')
-        {
-            $this->EE->db->select('field_id, drifter_channels');
-            $query = $this->EE->db->get('channel_fields');
-
-            // Update existing hooks
-            $this->EE->db->where('class', __CLASS__);
-            $this->EE->db->update('exp_extensions', array('version' => $this->version));
-            
-            foreach($query->result_array() as $row)
-            {
-                // If a { is present, the update has already been run. Checking b/c this
-                // appears to get called twice on the ext page load. why?
-                if(!strstr($row['drifter_channels'], '{'))
-                {
-                    $ids = explode(" ", $row['drifter_channels']);
-                    $new_ids = array();
-                
-                    foreach($ids as $id)
-                    {
-                        if($id != '')
-                        {
-                            $new_ids[] = '{'. $id .'}';
-                        }
-                    }
-
-                    if(count($new_ids) > 0)
-                    {
-                        $new_ids = implode(" ", $new_ids);
-                        $this->EE->db->where('field_id', $row['field_id']);
-                        $this->EE->db->update('channel_fields', array('drifter_channels' => $new_ids));
-                    }
-                }
-            }
         }
     }
 
@@ -178,24 +156,6 @@ class Drifter_ext
         // Remove columns when un-installed
         $this->EE->db->query("ALTER TABLE exp_channel_fields DROP COLUMN field_is_drifter");
         $this->EE->db->query("ALTER TABLE exp_channel_fields DROP COLUMN drifter_channels");
-    }
-    
-    
-    function publish_form_channel_preferences($data)
-    {
-        if ($this->EE->extensions->last_call)
-        {
-            $data = $this->EE->extensions->last_call;
-        }
-
-        // Time to get creative...
-        require 'libraries/channel_model.php';
-        $this->EE->channel_model = new Drifter_Channel_Model;
-        
-        require 'libraries/Api_channel_entries.php';
-        $this->EE->api_channel_entries = new Drifter_Api_Channel_Entries;
-        
-        return $data;
     }
 
     /**
